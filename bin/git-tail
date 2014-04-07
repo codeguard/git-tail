@@ -1,76 +1,112 @@
 #!/usr/bin/env ruby
-puts lib_dir = File.expand_path('../../lib', __FILE__)
+lib_dir = File.expand_path('../../lib', __FILE__)
 $LOAD_PATH.unshift(lib_dir) unless $LOAD_PATH.include?(lib_dir)
 require 'trollop'
 require 'git/tail'
 
-options = Trollop.options do
-  version "git-tail #{Git::Tail::VERSION}"
-  banner <<-END
+module Git
+  module Tail
+    extend Git::Output
 
-Usage:
-  git tail --since <time> [--other-options ...]
-  END
+    options = Trollop.options do
+      version "git-tail #{Git::Tail::VERSION}"
+      banner <<-END
 
-  opt :since,
-    'Keep commit history after this date. Can be absolute or relative (e.g. "1 month ago"). REQUIRED.',
-    :type => :string,
-    :required => true
+    Usage:
+      git tail --since <time> [--other-options ...] [<path>]
 
-  opt :clone,
-    'Clone to given relative path and perform the tail operation there, leaving this repo unchanged.',
-    :type => :string
+    Shrinks the repo at the given path by removing all history prior to the
+    date given by --since. If <path> is not given, the repo surrounding the
+    current directory is used.
+      END
 
-  opt :branch,
-    'Only rewrite the given ref(s), leaving others alone. May be specified more than once. Rewrites all refs with history predating "--since" date by default.',
-    :type => :string,
-    :multi => true
+      banner ''
+      banner 'TARGET OPTIONS:'
+      opt :since,
+        'Keep commit history after this date. Can be absolute or relative (e.g. "1 month ago"). REQUIRED.',
+        :type => :string,
+        :required => true
 
-  banner ''
-  banner "TAG OPTIONS: (only one may be specified)"
+      opt :clone,
+        'Clone to given relative path and perform the tail operation there, leaving this repo unchanged.',
+        :type => :string
 
-  opt :rewrite_tags,
-    'Tags pointing to removed commits will point to the new initial commit. This is the default.'
+      opt :branch,
+        'Only rewrite the given ref(s), leaving others alone. May be specified more than once. Rewrites all refs with history predating "--since" date by default.',
+        :type => :string,
+        :multi => true
 
-  opt :delete_tags,
-    'Tags pointing to removed commits will also be removed.'
+      banner ''
+      banner "TAG OPTIONS: (only one may be specified)"
 
-  opt :ignore_tags,
-    'Tags will be left alone; their commits and all ancestors of those commits will NOT be tailed.'
+      opt :rewrite_tags,
+        'Tags pointing to removed commits will be updated to point to the new first commit. This is the default.'
 
-  conflicts :rewrite_tags, :delete_tags, :ignore_tags
+      opt :delete_tags,
+        'Tags pointing to removed commits will also be removed.'
 
-  banner ""
-  banner "MESSAGE OPTIONS:"
-  banner "  These determine how git-tail logs its own activity on revised commits."
-  banner ""
-  banner "  The following strategies are available:"
-  banner "    'replace'  - original commit message is discarded"
-  banner "    'append'   - text is added to original message, separated by a blank line"
-  banner "    'annotate' - no changes to commit message; text is added using git-notes(1)"
-  banner "    'none'     - no changes are made; message options are ignored"
-  banner ""
-  banner "  The following substitution fields may be used in message strings:"
-  banner "    %(date) - Current date and time in RFC 2822 format"
-  banner "    %(orig_commit) - Original full hash of rewritten commit"
-  banner "    %(orig_message) - Original commit message from rewritten commit"
-  banner ""
+      opt :ignore_tags,
+        'Tags will be left alone; their commits and all ancestors of those commits will NOT be tailed.'
 
-  opt :message_strategy,
-    'replace, append, annotate or none (see above)',
-    :short => 'e',
-    :default => 'annotate'
+      conflicts :rewrite_tags, :delete_tags, :ignore_tags
 
-  opt :message,
-    'Applied by --message-strategy to rewritten commits',
-    :default => 'Recommitted by git-tail on %(date). Was: %(orig_commit)'
+      banner ""
+      banner "MESSAGE OPTIONS:"
+      banner "  These determine how git-tail logs its own activity on revised commits."
+      banner ""
+      banner "  The following strategies are available:"
+      banner "    'replace'  - original commit message is discarded"
+      banner "    'append'   - text is added to original message, separated by a blank line"
+      banner "    'annotate' - no changes to commit message; text is added using git-notes(1)"
+      banner "    'none'     - no changes are made; message options are ignored"
+      banner ""
+      banner "  The following substitution fields may be used in message strings:"
+      banner "    %(date) - Current date and time in RFC 2822 format"
+      banner "    %(orig_commit) - Original full hash of rewritten commit"
+      banner "    %(orig_message) - Original commit message from rewritten commit"
+      banner ""
 
-  opt :first_message,
-    'Text for first commit at start of tailed branch',
-    :default => 'New base created by git-tail on %(date)'
+      opt :message_strategy,
+        'replace, append, annotate or none (see above)',
+        :short => 'M',
+        :default => 'annotate'
 
-  banner ''
+      opt :message,
+        'Applied by --message-strategy to rewritten commits',
+        :default => 'Recommitted by git-tail on %(date). Was: %(orig_commit)'
 
+      opt :first_message,
+        'Text for first commit at start of tailed branch',
+        :default => 'New base created by git-tail on %(date)'
+
+      banner ''
+
+      opt :verbose,
+        'Show all git commands and their output',
+        :default => false,
+        :short => 'V'
+
+      stop_on_unknown
+    end
+
+    Git::Command.verbose = options[:verbose]
+
+    # Figure out where we need to be and switch to it
+    Dir.chdir ARGV.shift unless ARGV.empty?
+    Dir.chdir path = Git.command('rev-parse', nil, :show_toplevel => true)
+
+    if options[:clone]
+      clone = File.expand_path(options.delete(:clone))
+      out "Cloning #{path} to #{clone}..."
+      Git.command 'clone', [path, clone], :checkout => false
+      Dir.chdir path = clone
+
+      # Kill the origin remote; in this case it only confuses matters
+      Git.command %w(remote remove), 'origin'
+    end
+
+    runner = Git::Tail::Runner.new options
+    runner.run
+  end
 end
 
-puts options[:since]

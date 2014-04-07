@@ -29,4 +29,8 @@ Gem::Specification.new do |spec|
 
   spec.add_development_dependency "bundler", "~> 1.5"
   spec.add_development_dependency "rake"
+
+  spec.add_runtime_dependency "trollop", "~> 2.0"
+  spec.add_runtime_dependency "rainbow", "~> 2.0"
+  spec.add_runtime_dependency "childprocess", "~> 0.5.2"
 end
