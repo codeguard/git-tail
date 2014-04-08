@@ -44,11 +44,26 @@ module Git
         if old_log.empty?
           out :detail, 2, "No commits prior to cutoff date. Skipping."
         else
-          # Lookahead assertions FTW
-          old_commits = old_log.split /(?=commit [0-9a-f]{40})/
+          old_commits = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
+          out :detail, 2, "Truncating #{old_commits.length} commits..."
+          old_base = Commit.new(old_commits.first)
+          tree = Git.command 'rev-parse', "#{old_base.hash}^{tree}"
+          new_base = Git.command 'commit-tree', tree,
+            {:message => old_base.message},
+            'GIT_COMMITTER_NAME'  => old_base.committer_name,
+            'GIT_COMMITTER_EMAIL' => old_base.committer_email,
+            'GIT_COMMITTER_DATE'  => old_base.committer_date,
+            'GIT_AUTHOR_NAME'     => old_base.author_name,
+            'GIT_AUTHOR_EMAIL'    => old_base.author_email,
+            'GIT_AUTHOR_DATE'     => old_base.author_date
+          Git.command 'replace', [old_base.hash, new_base]
 
+          # Now rewrite the history to make the replacement permanent...
+          Git.command 'filter-branch', branch, :tag_name_filter => 'cat'
+
+          # ...And get rid of the replacement now that we no longer need it.
+          Git.command 'update-ref', ['-d', "refs/replace/#{old_base.hash}", new_base]
         end
-
       end
 
     private
