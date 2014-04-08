@@ -17,7 +17,7 @@ module Git
       attr_accessor :verbose
     end
 
-    attr_reader :command, :arguments, :options, :environment
+    attr_reader :command, :arguments, :environment
 
     # Set after {#run} completes.
     attr_reader :stdout, :stderr, :status
@@ -28,12 +28,10 @@ module Git
     # to the command automatically.
     #
     # @param [String, Symbol] cmd Git command to run (i.e. `git <cmd>`)
-    # @param [String, Array, nil] args Zero to many command-line argument strings (after options)
-    # @param [Hash] opts Options to be passed on command line (use *true* or *false* values for flags)
+    # @param [Array] args Options and arguments in order
     # @param [Hash] env Environment variables to set on execution
-    def initialize(cmd, args=nil, opts={}, env={})
-      @command, @options, @environment = Array(cmd), opts, env
-      @arguments = args ? Array(args) : []
+    def initialize(cmd, args=[], env={})
+      @command, @arguments, @environment = cmd, Array(args), env
       @stdout, @stderr = "", ""
     end
 
@@ -74,26 +72,8 @@ module Git
     end
 
   private
-    def options_array
-      arr = []
-      options.each do |key, value|
-        name = key.to_s.tr('_', '-')
-        case value
-        when false, nil
-          arr << "--no-#{name}"
-        when true
-          arr << "--#{name}"
-        when Array
-          value.each {|v| arr << "--#{name}" << v.to_s}
-        else
-          arr << "--#{name}" << value.to_s
-        end
-      end
-      arr
-    end
-
     def command_array
-      ['git'] + command + options_array + arguments
+      ['git'] + command.split(' ') + arguments
     end
 
     def verbose?
@@ -116,8 +96,8 @@ module Git
   # Runs the given Git subcommand and sends results to standard output
   # or error. Kills the program if the command fails.
   # @param (see Command#initialize)
-  def self.command(cmd, args=nil, opts={}, env={})
-    command = Command.new cmd, args, opts, env
+  def self.command(cmd, args=[], env={})
+    command = Command.new cmd, args, env
     command.run
 
   rescue CommandError => e

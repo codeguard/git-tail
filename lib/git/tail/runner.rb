@@ -1,4 +1,5 @@
 require "git/output"
+require "git/tail/commit"
 
 module Git
   module Tail
@@ -38,7 +39,7 @@ module Git
 
       def clean_local(branch)
         out 2, "#{branch}:"
-        old_log = Git.command 'log', [min_age, branch], :format => 'fuller'
+        old_log = Git.command 'log', [min_age, '--format=fuller', branch]
         # new_log = Git.command 'log', [max_age, branch], :format => 'fuller'
 
         if old_log.empty?
@@ -48,21 +49,20 @@ module Git
           out :detail, 2, "Truncating #{old_commits.length} commits..."
           old_base = Commit.new(old_commits.first)
           tree = Git.command 'rev-parse', "#{old_base.hash}^{tree}"
-          new_base = Git.command 'commit-tree', tree,
-            {:message => old_base.message},
+          new_base = Git.command 'commit-tree', ['-m', "\"#{old_base.message}\"".squeeze('"'), tree],
             'GIT_COMMITTER_NAME'  => old_base.committer_name,
             'GIT_COMMITTER_EMAIL' => old_base.committer_email,
             'GIT_COMMITTER_DATE'  => old_base.committer_date,
             'GIT_AUTHOR_NAME'     => old_base.author_name,
             'GIT_AUTHOR_EMAIL'    => old_base.author_email,
             'GIT_AUTHOR_DATE'     => old_base.author_date
-          Git.command 'replace', [old_base.hash, new_base]
+          Git.command 'replace', ['-f', old_base.hash, new_base]
 
           # Now rewrite the history to make the replacement permanent...
-          Git.command 'filter-branch', branch, :tag_name_filter => 'cat'
+          Git.command 'filter-branch', ['--tag-name-filter', 'cat', branch]
 
           # ...And get rid of the replacement now that we no longer need it.
-          Git.command 'update-ref', ['-d', "refs/replace/#{old_base.hash}", new_base]
+          Git.command 'update-ref -d', ["refs/replace/#{old_base.hash}", new_base]
         end
       end
 
@@ -81,7 +81,7 @@ module Git
       end
 
       def get_local_branches
-        git_branches = Git.command 'branch', nil, :list => true, :color => false
+        git_branches = Git.command 'branch', %w(--list --no-color)
         branch_names = git_branches.split($/)
         branch_names.each do |branch|
           branches << branch[/\s*\*?\s*(.*)/, 1]

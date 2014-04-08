@@ -93,16 +93,16 @@ module Git
 
     # Figure out where we need to be and switch to it
     Dir.chdir ARGV.shift unless ARGV.empty?
-    Dir.chdir path = Git.command('rev-parse', nil, :show_toplevel => true)
+    Dir.chdir path = Git.command('rev-parse', '--show-toplevel')
 
     if options[:clone]
       clone = File.expand_path(options.delete(:clone))
       out "Cloning #{path} to #{clone}..."
-      Git.command 'clone', [path, clone], :checkout => false
+      Git.command 'clone', ['--no-checkout', path, clone]
       Dir.chdir path = clone
 
       # Kill the origin remote; in this case it only confuses matters
-      Git.command %w(remote remove), 'origin'
+      Git.command 'remote remove', 'origin'
     end
 
     runner = Git::Tail::Runner.new options
