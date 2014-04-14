@@ -35,19 +35,27 @@ module Git
           "Checking local branches..."
         get_local_branches if branches.empty?
         branches.each {|branch| clean_local branch}
+        out "Cleaning and repacking objects..."
+        Git.command 'reflog', ['expire', '--expire=all']
+        Git.command 'gc', ['--aggressive', '--prune=all']
+
       end
 
       def clean_local(branch)
         out 2, "#{branch}:"
         old_log = Git.command 'log', [min_age, '--format=fuller', branch]
-        # new_log = Git.command 'log', [max_age, branch], :format => 'fuller'
+        new_log = Git.command 'log', [max_age, '--format=fuller', branch]
 
         if old_log.empty?
           out :detail, 2, "No commits prior to cutoff date. Skipping."
         else
-          old_commits = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
-          out :detail, 2, "Truncating #{old_commits.length} commits..."
-          old_base = Commit.new(old_commits.first)
+          old_log_entries = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
+          new_log_entries = new_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
+          new_commits = new_log_entries.collect {|entry| Commit.new(entry)}
+
+          out :detail, 4, "Truncating #{old_log_entries.length} commits..."
+          old_base = Commit.new(old_log_entries.first)
+
           tree = Git.command 'rev-parse', "#{old_base.hash}^{tree}"
           new_base = Git.command 'commit-tree', ['-m', "\"#{old_base.message}\"".squeeze('"'), tree],
             'GIT_COMMITTER_NAME'  => old_base.committer_name,
@@ -63,6 +71,10 @@ module Git
 
           # ...And get rid of the replacement now that we no longer need it.
           Git.command 'update-ref -d', ["refs/replace/#{old_base.hash}", new_base]
+
+          # Also get rid of any refs that pointed to the old HEAD commit, so we can gc it.
+          delete_refs new_commits.first.hash
+
         end
       end
 
@@ -87,6 +99,17 @@ module Git
           branches << branch[/\s*\*?\s*(.*)/, 1]
         end
       end
+
+      def delete_refs(commit)
+        all_refs = Git.command 'for-each-ref'
+        all_refs.scan /^#{commit}\scommit\s+(.+)$/ do |refgroup|
+          if ref = refgroup[0]
+            out :detail, 4, "Deleting old ref #{ref}"
+            Git.command 'update-ref',  ['-d', ref]
+          end
+        end
+      end
+
     end
   end
 end

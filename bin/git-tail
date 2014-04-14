@@ -92,13 +92,16 @@ module Git
     Git::Command.verbose = options[:verbose]
 
     # Figure out where we need to be and switch to it
-    Dir.chdir ARGV.shift unless ARGV.empty?
-    Dir.chdir path = Git.command('rev-parse', '--show-toplevel')
+    if path = ARGV.shift
+      Dir.chdir path
+    else
+      path = Dir.pwd
+    end
 
     if options[:clone]
       clone = File.expand_path(options.delete(:clone))
       out "Cloning #{path} to #{clone}..."
-      Git.command 'clone', ['--no-checkout', path, clone]
+      Git.command 'clone', [path, clone]
       Dir.chdir path = clone
 
       # Kill the origin remote; in this case it only confuses matters
