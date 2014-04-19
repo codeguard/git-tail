@@ -36,7 +36,7 @@ module Git
         get_local_branches if branches.empty?
         branches.each {|branch| clean_local branch}
         out "Cleaning and repacking objects..."
-        Git.command 'reflog', ['expire', '--expire=all']
+        Git.command 'reflog', ['expire', '--expire=all', '--all']
         Git.command 'gc', ['--aggressive', '--prune=all']
 
       end
