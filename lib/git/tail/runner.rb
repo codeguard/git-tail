@@ -21,13 +21,21 @@ module Git
       # Branches specified on command line. (Runs on all branches if empty.)
       attr_reader :branches
 
+      # If true, alias new commits to old hashes using 'git replace'
+      attr_reader :replace
+
+      # Captures the original and rewritten commit hashes for 'git replace'
+      attr_reader :commit_map
+
 
       # @param [String]
       # @param [Hash] options See `git tail --help`
       def initialize(options)
         @now = Time.now
         @since = options[:since]
+        @replace = options[:replace]
         @branches = options[:branches] || []
+        @commit_map = {}
       end
 
       def run
@@ -35,35 +43,37 @@ module Git
           "Checking local branches..."
         get_local_branches if branches.empty?
         branches.each {|branch| clean_local branch}
+
         out "Cleaning and repacking objects..."
-        Git.command 'reflog', ['expire', '--expire=all', '--all']
-        Git.command 'gc', ['--aggressive', '--prune=all']
+        repack
+
+        if replace
+          out "Aliasing new commit hashes to old ones..."
+          branches.each {|branch| update_commit_map branch}
+          replace_commit_hashes commit_map.values
+        end
 
       end
 
       def clean_local(branch)
         out 2, "#{branch}:"
-        old_log = Git.command 'log', [min_age, '--format=fuller', branch]
-        new_log = Git.command 'log', [max_age, '--format=fuller', branch]
+        tip_hash = Git.command 'rev-parse', [branch]
+        old_log = Git.command 'log', [min_age, '--format=raw', branch]
 
         if old_log.empty?
           out :detail, 2, "No commits prior to cutoff date. Skipping."
         else
           old_log_entries = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
-          new_log_entries = new_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
-          new_commits = new_log_entries.collect {|entry| Commit.new(entry)}
+          build_commit_map(branch) if replace
 
           out :detail, 4, "Truncating #{old_log_entries.length} commits..."
           old_base = Commit.new(old_log_entries.first)
 
           tree = Git.command 'rev-parse', "#{old_base.hash}^{tree}"
-          new_base = Git.command 'commit-tree', ['-m', "\"#{old_base.message}\"".squeeze('"'), tree],
-            'GIT_COMMITTER_NAME'  => old_base.committer_name,
-            'GIT_COMMITTER_EMAIL' => old_base.committer_email,
-            'GIT_COMMITTER_DATE'  => old_base.committer_date,
-            'GIT_AUTHOR_NAME'     => old_base.author_name,
-            'GIT_AUTHOR_EMAIL'    => old_base.author_email,
-            'GIT_AUTHOR_DATE'     => old_base.author_date
+          new_base = Git.command 'commit-tree',
+            ['-m', "\"#{old_base.message}\"".squeeze('"'), tree],
+            old_base.env
+
           Git.command 'replace', ['-f', old_base.hash, new_base]
 
           # Now rewrite the history to make the replacement permanent...
@@ -73,9 +83,14 @@ module Git
           Git.command 'update-ref -d', ["refs/replace/#{old_base.hash}", new_base]
 
           # Also get rid of any refs that pointed to the old HEAD commit, so we can gc it.
-          delete_refs new_commits.first.hash
+          delete_refs tip_hash
 
         end
+      end
+
+      def repack
+        Git.command 'reflog', ['expire', '--expire=all', '--all']
+        Git.command 'gc', ['--aggressive', '--prune=all']
       end
 
     private
@@ -109,6 +124,38 @@ module Git
           end
         end
       end
+
+      def each_commit(branch)
+        log = Git.command 'log', [max_age, '--format=raw', branch]
+        log_entries = log.split /(?=commit [0-9a-f]{40})/
+        log_entries.each do |entry|
+          commit = Commit.new(entry)
+          yield commit
+        end
+      end
+
+      def build_commit_map(branch)
+        out :detail, 4, "Capturing recent commits for aliasing..."
+        each_commit(branch) do |commit|
+          commit_map[commit.key] = [commit.hash, nil]
+        end
+      end
+
+      def update_commit_map(branch)
+        each_commit(branch) do |commit|
+          if pair = commit_map[commit.key]
+            pair[1] = commit.hash
+          end
+        end
+      end
+
+      def replace_commit_hashes(commit_pairs)
+        commit_pairs.each do |pair|
+          old_hash, new_hash = *pair
+          Git.command 'replace', ['-f', old_hash, new_hash]
+        end
+      end
+
 
     end
   end

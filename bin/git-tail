@@ -37,6 +37,9 @@ module Git
         :type => :string,
         :multi => true
 
+      opt :replace,
+        "Alias surviving commits to their original hash IDs with 'git replace'"
+
       banner ''
       banner "TAG OPTIONS: (only one may be specified)"
 
