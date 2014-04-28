@@ -1,7 +1,7 @@
 require 'rainbow'
 
-STDOUT.sync = false
-STDERR.sync = false
+STDOUT.sync = true
+STDERR.sync = true
 
 module Git
 
@@ -42,7 +42,6 @@ module Git
       elements.unshift :default
       strings = colorize(elements, OUT_COLORS)
       strings.each {|s| STDOUT.puts s}
-      STDOUT.fsync
     end
 
     # Sends all of the given strings to STDERR. Symbols change the color
@@ -51,7 +50,6 @@ module Git
       elements.unshift :default
       strings = colorize(elements, ERR_COLORS)
       strings.each {|s| STDERR.puts s}
-      STDERR.fsync
     end
 
 
