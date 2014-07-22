@@ -58,16 +58,22 @@ module Git
       def clean_local(branch)
         out 2, "#{branch}:"
         tip_hash = Git.command 'rev-parse', [branch]
+        # commits older than and including cutoff
         old_log = Git.command 'log', [min_age, '--format=raw', branch]
+        # commits newer than and including cutoff
+        new_log = Git.command 'log', [max_age, '--format=raw', branch]
 
         if old_log.empty?
           out :detail, 2, "No commits prior to cutoff date. Skipping."
+        elsif new_log.empty?
+          out :detail, 2, "No commits after cutoff date. Skipping."
         else
           old_log_entries = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
+          new_log_entries = new_log.split /(?=commit [0-9a-f]{40})/
           build_commit_map(branch) if replace
 
           out :detail, 4, "Truncating #{old_log_entries.length} commits..."
-          old_base = Commit.new(old_log_entries.first)
+          old_base = Commit.new(new_log_entries.last)
 
           tree = Git.command 'rev-parse', "#{old_base.hash}^{tree}"
           new_base = Git.command 'commit-tree',
