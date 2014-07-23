@@ -58,18 +58,25 @@ module Git
       def clean_local(branch)
         out 2, "#{branch}:"
         tip_hash = Git.command 'rev-parse', [branch]
+
         # commits older than and including cutoff
         old_log = Git.command 'log', [min_age, '--format=raw', branch]
+        old_log_entries = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
+
         # commits newer than and including cutoff
         new_log = Git.command 'log', [max_age, '--format=raw', branch]
+        new_log_entries = new_log.split /(?=commit [0-9a-f]{40})/
 
-        if old_log.empty?
+        # If the cutoff time is the same as one of the commit times, this
+        # commit will be in both new_log_entries and old_log_entries. So
+        # make sure it's only in one.
+        new_log_entries.pop if new_log_entries.last == old_log_entries.first
+
+        if old_log_entries.empty?
           out :detail, 2, "No commits prior to cutoff date. Skipping."
-        elsif new_log.empty?
+        elsif new_log_entries.empty?
           out :detail, 2, "No commits after cutoff date. Skipping."
         else
-          old_log_entries = old_log.split /(?=commit [0-9a-f]{40})/   # Lookahead assertions FTW
-          new_log_entries = new_log.split /(?=commit [0-9a-f]{40})/
           build_commit_map(branch) if replace
 
           out :detail, 4, "Truncating #{old_log_entries.length} commits..."
