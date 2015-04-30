@@ -73,11 +73,11 @@ module Git
         new_log_entries.pop if new_log_entries.last == old_log_entries.first
 
         if old_log_entries.count <= 1
-          out :detail, 2, "No commits prior to cutoff date. Skipping."
+          out :detail, 2, "No prunable commits prior to cutoff date. Skipping."
         else
           build_commit_map(branch) if replace
 
-          out :detail, 4, "Truncating #{old_log_entries.length} commits..."
+          out :detail, 4, "Truncating #{old_log_entries.length - 1} commits..."
           old_base = Commit.new(old_log_entries.first)
 
           tree = Git.command 'rev-parse', "#{old_base.hash}^{tree}"
